@@ -5,7 +5,7 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 from PIL import Image
 import customtkinter as ctk
 import tkinter as tk
-from tkinter import filedialog
+from tkinter import filedialog, messagebox
 
 def rgb_to_ycbcr(image):
 
@@ -167,19 +167,29 @@ def get_quantization_tables(quality):
         [99, 99, 99, 99, 99, 99, 99, 99]
     ], dtype=np.float32)
 
-    # Scale factor calculation (0-50 where 0=max quality, 50=min quality)
-    if quality <= 0:
-        scale = 1
-    elif quality >= 50:
-        scale = 50
-    else:
-        scale = quality
+    # Ensure quality is in valid range
+    quality = max(0, min(50, quality))
     
-    # Scaling formula (non-linear to match JPEG behavior)
-    scaling_factor = 1 + (scale / 10)
+    # Convert inverse quality scale to the standard JPEG quality factor
+    # where quality=0 → Q=100, quality=50 → Q=1
+    standard_q = 100 - (quality * 2)
     
-    Q_Y = np.clip(np.round(Q_Y_base * scaling_factor), 1, 255)
-    Q_C = np.clip(np.round(Q_C_base * scaling_factor), 1, 255)
+    if standard_q <= 0:  # This would happen if quality = 50
+        standard_q = 1  # Set to minimum quality
+    
+    # Now use the standard formula with the converted quality value
+    if standard_q < 50:
+        scale_factor = 5000 / standard_q
+    elif standard_q < 100:
+        scale_factor = 200 - 2 * standard_q
+    else:  # standard_q == 100
+        scale_factor = 1
+    
+    # Apply scaling
+    scale_factor = scale_factor / 100.0
+    
+    Q_Y = np.clip(np.round(Q_Y_base * scale_factor), 1, 255)
+    Q_C = np.clip(np.round(Q_C_base * scale_factor), 1, 255)
     
     return Q_Y, Q_C
 def quantize_dct(dct_coeffs, quantization_table): # to quantize DCT coefficients
@@ -356,7 +366,13 @@ class JPEGCompressionUI:
     def update_quality(self, value):
         """Update quality value when slider is moved"""
         self.quality = int(value)
-        self.quality_value.configure(text=str(self.quality))
+        if self.quality < 0:
+            messagebox.showerror("Error", "Quality must be between 0 and 50")
+        elif self.quality > 50:
+            messagebox.showerror("Error", "Quality must be between 0 and 50")
+        else:
+            self.quality_value.configure(text=str(self.quality))
+            
     
     def browse_image(self):
         """Open file dialog to select an image"""
